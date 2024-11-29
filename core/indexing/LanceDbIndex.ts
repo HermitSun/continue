@@ -21,7 +21,7 @@ import {
   PathAndCacheKey,
   RefreshIndexResults,
 } from "./types.js";
-// rag branch
+// rag continue
 // LanceDB  converts to lowercase, so names must all be lowercase
 interface LanceDbRow {
   uuid: string;
