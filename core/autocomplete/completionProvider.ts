@@ -566,6 +566,7 @@ export class CompletionProvider {
         extrasSnippets,
         this.importDefinitionsService,
         this.rootPathContextService,
+        this.configHandler.logMessage,
       );
     // If prefix is manually passed
     if (manuallyPassPrefix) {

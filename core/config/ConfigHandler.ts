@@ -36,7 +36,6 @@ export class ConfigHandler {
   private additionalContextProviders: IContextProvider[] = [];
   private profiles: ProfileLifecycleManager[];
   private selectedProfileId: string;
-
   constructor(
     private readonly ide: IDE,
     private ideSettingsPromise: Promise<IdeSettings>,

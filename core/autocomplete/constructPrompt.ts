@@ -44,6 +44,7 @@ export async function constructAutocompletePrompt(
   extraSnippets: AutocompleteSnippet[],
   importDefinitionsService: ImportDefinitionsService,
   rootPathContextService: RootPathContextService,
+  logMessage: (message: string) => void,
 ): Promise<{
   prefix: string;
   suffix: string;
@@ -54,14 +55,20 @@ export async function constructAutocompletePrompt(
   // Construct basic prefix
   const maxPrefixTokens = options.maxPromptTokens * options.prefixPercentage;
   const prefix = pruneLinesFromTop(fullPrefix, maxPrefixTokens, modelName);
-
+  
   // Construct suffix
   const maxSuffixTokens = Math.min(
     options.maxPromptTokens - countTokens(prefix, modelName),
     options.maxSuffixPercentage * options.maxPromptTokens,
   );
   const suffix = pruneLinesFromBottom(fullSuffix, maxSuffixTokens, modelName);
-
+  // logMessage(
+  //   "core/autocomplete/constructPrompt.ts\n" +
+  //   "constructAutocompletePrompt - maxPrefixTokens: " + maxPrefixTokens + "\n" +
+  //   "constructAutocompletePrompt - prefix: " + prefix + "\n" +
+  //   "constructAutocompletePrompt - maxSuffixTokens: " + maxSuffixTokens + "\n" +
+  //   "constructAutocompletePrompt - suffix: " + suffix + "\n"
+  // );
   // Calculate AST Path
   let treePath: AstPath | undefined;
   try {
@@ -75,10 +82,8 @@ export async function constructAutocompletePrompt(
 
   // Find external snippets
   let snippets: AutocompleteSnippet[] = [];
- 
   if (options.useOtherFiles) {
     snippets.push(...extraSnippets);
-                                 
     const windowAroundCursor =
       fullPrefix.slice(
         -options.slidingWindowSize * options.slidingWindowPrefixPercentage,
@@ -86,7 +91,11 @@ export async function constructAutocompletePrompt(
       fullSuffix.slice(
         options.slidingWindowSize * (1 - options.slidingWindowPrefixPercentage),
       );
-
+    // logMessage(
+    //   "core/autocomplete/constructPrompt.ts\n" +
+    //   "constructAutocompletePrompt - extraSnippets: " + JSON.stringify({...extraSnippets}, null, 2) + "\n" +
+    //   "constructAutocompletePrompt - windowAroundCursor: " + windowAroundCursor + "\n"
+    // );
     // This was much too slow, and not super useful
     // const slidingWindowMatches = await slidingWindowMatcher(
     //   recentlyEditedFiles,
@@ -117,6 +126,11 @@ export async function constructAutocompletePrompt(
             score: 0.8,
           });
         }
+        // logMessage(
+        //   "core/autocomplete/constructPrompt.ts\n" +
+        //   "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" +
+        //   "constructAutocompletePrompt - matchingRange: " + JSON.stringify({...matchingRange}, null, 2) + "\n"
+        // );
       }
     }
 
@@ -140,6 +154,11 @@ export async function constructAutocompletePrompt(
           }
         }
       }
+      // logMessage(
+      //   "core/autocomplete/constructPrompt.ts\n" +
+      //   "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
+      //   "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n"
+      // );
       snippets.push(...importSnippets);
     }
 
@@ -148,6 +167,10 @@ export async function constructAutocompletePrompt(
         filepath,
         treePath,
       );
+      // logMessage(
+      //   "core/autocomplete/constructPrompt.ts\n" +
+      //   "constructAutocompletePrompt - ctx: " + JSON.stringify({...ctx}, null, 2) + "\n"
+      // );
       snippets.push(...ctx);
     }
 
@@ -162,7 +185,10 @@ export async function constructAutocompletePrompt(
 
     // Rank / order the snippets
     const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
-
+    // logMessage(
+    //   "core/autocomplete/constructPrompt.ts\n" +
+    //   "constructAutocompletePrompt - scoredSnippets: " + JSON.stringify({...scoredSnippets}, null, 2) + "\n"
+    // );
     // Fill maxSnippetTokens with snippets
     const maxSnippetTokens =
       options.maxPromptTokens * options.maxSnippetPercentage;
@@ -196,7 +222,10 @@ export async function constructAutocompletePrompt(
       maxSnippetTokens,
       modelName,
     );
-
+    // logMessage(
+    //   "core/autocomplete/constructPrompt.ts\n" +
+    //   "constructAutocompletePrompt - finalSnippets: " + JSON.stringify({...finalSnippets}, null, 2) + "\n"
+    // );
     snippets = finalSnippets;
   }
 
