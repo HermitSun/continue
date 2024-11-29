@@ -44,7 +44,7 @@ export async function constructAutocompletePrompt(
   extraSnippets: AutocompleteSnippet[],
   importDefinitionsService: ImportDefinitionsService,
   rootPathContextService: RootPathContextService,
-  logMessage: (message: string) => void,
+  // logMessage: (message: string) => void,
 ): Promise<{
   prefix: string;
   suffix: string;
@@ -212,7 +212,7 @@ export async function constructAutocompletePrompt(
       filepath.split("://").slice(-1)[0],
       prefixSuffixRangeWithBuffer,
     );
-
+    
     // Filter snippets for those with best scores (must be above threshold)
     finalSnippets = finalSnippets.filter(
       (snippet) => snippet.score >= options.recentlyEditedSimilarityThreshold,
