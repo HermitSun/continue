@@ -45,7 +45,7 @@ export class ConfigHandler {
     this.ide = ide;
     this.ideSettingsPromise = ideSettingsPromise;
     this.writeLog = writeLog;
-
+    
     // Set local profile as default
     const localProfileLoader = new LocalProfileLoader(
       ide,
@@ -112,7 +112,7 @@ export class ConfigHandler {
         this.notifyProfileListeners(
           this.profiles.map((profile) => profile.profileDescription),
         );
-
+        
         // Check the last selected workspace, and reload if it isn't local
         const workspaceId = await this.getWorkspaceId();
         const lastSelectedWorkspaceIds =

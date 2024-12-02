@@ -57,7 +57,7 @@ export class CodebaseIndexer {
   async clearIndexes() {
     const sqliteFilepath = getIndexSqlitePath();
     const lanceDbFolder = getLanceDbPath();
-
+    
     try {
       await fs.unlink(sqliteFilepath);
     } catch (error) {
@@ -185,7 +185,7 @@ export class CodebaseIndexer {
       status: "loading",
     };
     const beginTime = Date.now();
-
+    
     for (const directory of workspaceDirs) {
       const dirBasename = await this.basename(directory);
       yield {
@@ -193,6 +193,7 @@ export class CodebaseIndexer {
         desc: `Discovering files in ${dirBasename}...`,
         status: "indexing",
       };
+
       const workspaceFiles = [];
       for await (const p of walkDirAsync(directory, this.ide)) {
         workspaceFiles.push(p);
@@ -378,7 +379,7 @@ export class CodebaseIndexer {
         results.addTag.length +
         results.removeTag.length;
       let completedOps = 0;
-
+      
       // Don't update if nothing to update. Some of the indices might do unnecessary setup work
       if (totalOps > 0) {
         for (const subResult of this.batchRefreshIndexResults(results)) {

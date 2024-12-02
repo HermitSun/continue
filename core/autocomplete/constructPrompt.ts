@@ -31,6 +31,57 @@ export function languageForFilepath(
 ): AutocompleteLanguageInfo {
   return LANGUAGES[filepath.split(".").slice(-1)[0]] || Typescript;
 }
+
+import * as path from "path";
+import { promises as fs } from 'fs';
+
+/**
+ * 递归获取指定目录及其子目录中的所有文件路径
+ * @param directory - 目标目录的路径
+ * @returns 文件路径列表
+ */
+export async function getFilesFromDirectory(directory: string): Promise<string[]> {
+    const results: string[] = [];
+    try {
+        const entries = await fs.readdir(directory, { withFileTypes: true }); // 获取目录内容
+        for (const entry of entries) {
+            const fullPath = path.join(directory, entry.name); // 拼接绝对路径
+            if (entry.isDirectory()) {
+                results.push(...await getFilesFromDirectory(fullPath)); // 递归处理子目录
+            } else {
+                results.push(fullPath); // 添加文件路径
+            }
+        }
+    } catch (error) {
+        console.error(`Error reading directory: ${directory}`, error);
+    }
+    return results;
+}
+
+async function readFileWithSizeCheck(filepath: string, maxSize: number): Promise<string> {
+  try {
+    const stats = await fs.stat(filepath); // 获取文件信息
+    const fileSizeInBytes = stats.size; // 获取文件大小（字节）
+
+    if (fileSizeInBytes < 10 * maxSize) {
+      // 如果文件大于最大大小（1MB），只读取文件的前部分
+      const buffer = Buffer.alloc(maxSize); // 创建一个缓冲区来存放文件的前部分内容
+      const fd = await fs.open(filepath, 'r'); // 打开文件进行读取
+      await fd.read(buffer, 0, maxSize, 0); // 从文件开始读取前 maxSize 字节
+      await fd.close(); // 关闭文件描述符
+
+      return buffer.toString('utf-8'); // 返回读取的内容
+    } else {
+      // 如果文件较小，直接读取整个文件
+      return "";
+    }
+  } catch (error) {
+    console.error(`读取文件 ${filepath} 时发生错误:`, error);
+    return '';
+  }
+}
+
+
 export async function constructAutocompletePrompt(
   filepath: string,
   cursorLine: number,
@@ -53,6 +104,7 @@ export async function constructAutocompletePrompt(
   completeMultiline: boolean;
   snippets: AutocompleteSnippet[];
 }>{
+  const startTime = Date.now();
   // Construct basic prefix
   const maxPrefixTokens = options.maxPromptTokens * options.prefixPercentage;
   const prefix = pruneLinesFromTop(fullPrefix, maxPrefixTokens, modelName);
@@ -74,16 +126,88 @@ export async function constructAutocompletePrompt(
   } catch (e) {
     console.error("Failed to parse AST", e);
   }
-
+  
+  const MAX_FILE_SIZE = 100000; // 100KB（字节）
+  const ReadFileStartTime = Date.now();
   // Find external snippets
   let snippets: AutocompleteSnippet[] = [];
   const workspaceDirs = await configHandler.ide.getWorkspaceDirs();
   for (const directory of workspaceDirs) {
-    const workspaceFiles = [];
-    for await (const p of walkDirAsync(directory, configHandler.ide)) {
-      workspaceFiles.push(p);
+    for await (const p of await getFilesFromDirectory(directory)) {
+      const ReadStartTime = Date.now();
+      const fileContent: string = await readFileWithSizeCheck(p, MAX_FILE_SIZE);
+      if (fileContent != ""){
+        await snippets.push({
+          filepath: p,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 } 
+          },
+          contents: fileContent
+        });
+      }
+      
+      const ReadTime = Date.now() - ReadStartTime;
     }
   }
+
+  const ReadFileTime = Date.now() - ReadFileStartTime;
+  await configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - snippets.length: " + snippets.length + "\n" +
+    "constructAutocompletePrompt - ReadFileTime: " + ReadFileTime/1000 + "s\n" 
+  );
+  
+  const windowAroundCursor =
+    fullPrefix.slice(
+      -options.slidingWindowSize * options.slidingWindowPrefixPercentage,
+    ) +
+    fullSuffix.slice(
+      options.slidingWindowSize * (1 - options.slidingWindowPrefixPercentage),
+    );
+  const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
+  // Fill maxSnippetTokens with snippets
+  const maxSnippetTokens =
+  options.maxPromptTokens * options.maxSnippetPercentage;
+
+  // Remove prefix range from snippets
+  const prefixLines = prefix.split("\n").length;
+  const suffixLines = suffix.split("\n").length;
+  const buffer = 8;
+  const prefixSuffixRangeWithBuffer = {
+    start: {
+      line: cursorLine - prefixLines - buffer,
+      character: 0,
+    },
+    end: {
+      line: cursorLine + suffixLines + buffer,
+      character: 0,
+    },
+  };
+  let finalSnippets = removeRangeFromSnippets(
+    scoredSnippets,
+    filepath.split("://").slice(-1)[0],
+    prefixSuffixRangeWithBuffer,
+  );
+
+  // Filter snippets for those with best scores (must be above threshold)
+  finalSnippets = finalSnippets.filter(
+    (snippet) => snippet.score >= options.recentlyEditedSimilarityThreshold,
+    );
+    finalSnippets = fillPromptWithSnippets(
+    scoredSnippets,
+    maxSnippetTokens,
+    modelName,
+  );
+  snippets = finalSnippets;
+
+  const time = Date.now() - startTime;
+  await configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - time: " + time/1000 + "s\n" +
+    "constructAutocompletePrompt - snippets: " + JSON.stringify(snippets,null,2) + "\n" +
+    "constructAutocompletePrompt - options: " + JSON.stringify({...options},null,2) + "\n"
+  );
 
   return {
     prefix,
@@ -98,6 +222,8 @@ export async function constructAutocompletePrompt(
     snippets,
   };
 }
+
+
 export async function constructAutocompletePrompt_origin(
   filepath: string,
   cursorLine: number,

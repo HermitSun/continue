@@ -27,7 +27,6 @@ export function jaccardSimilarity(a: string, b: string): number {
   if (union === 0) {
     return 0;
   }
-
   let intersection = 0;
   for (const symbol of aSet) {
     if (bSet.has(symbol)) {
