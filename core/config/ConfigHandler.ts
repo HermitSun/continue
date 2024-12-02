@@ -37,7 +37,7 @@ export class ConfigHandler {
   private profiles: ProfileLifecycleManager[];
   private selectedProfileId: string;
   constructor(
-    private readonly ide: IDE,
+    public readonly ide: IDE,
     private ideSettingsPromise: Promise<IdeSettings>,
     public readonly writeLog: (text: string) => Promise<void>,
     private controlPlaneClient: ControlPlaneClient,
@@ -232,6 +232,7 @@ export class ConfigHandler {
   async llmFromTitle(title?: string): Promise<ILLM> {
     const config = await this.loadConfig();
     const model = config.models.find((m) => m.title === title);
+    
     if (!model) {
       if (title === ONBOARDING_LOCAL_MODEL_TITLE) {
         // Special case, make calls to Ollama before we have it in the config

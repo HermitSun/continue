@@ -31,11 +31,13 @@ export default class RerankerRetrievalPipeline extends BaseRetrievalPipeline {
     const recentlyEditedFilesstartTime = Date.now();
     const recentlyEditedFilesChunks = await this.retrieveAndChunkRecentlyEditedFiles(nRetrieve);
     const recentlyEditedFilestime = Date.now() - recentlyEditedFilesstartTime;
+    
     // this.writeLog( 
     //   "core/context/retrieval/pipelines/RerankerRetrievalPipeline.ts\n" +
     //   "retrieveAndChunkRecentlyEditedFiles - time: " + recentlyEditedFilestime/1000 + "s\n" +
     //   "retrieveAndChunkRecentlyEditedFiles - recentlyEditedFilesChunks: " + JSON.stringify({...recentlyEditedFilesChunks},null,2) + "\n"
     // );
+
 
     const repoMapstartTime = Date.now();
     const repoMapChunks = await requestFilesFromRepoMap(
@@ -45,6 +47,7 @@ export default class RerankerRetrievalPipeline extends BaseRetrievalPipeline {
       input,
       filterDirectory,
     );
+
     const repoMapTime = Date.now() - repoMapstartTime;
     // this.writeLog(
     //   "core/context/retrieval/pipelines/RerankerRetrievalPipeline.ts\n"+

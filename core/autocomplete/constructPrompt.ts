@@ -23,13 +23,14 @@ import { RecentlyEditedRange, findMatchingRange } from "./recentlyEdited.js";
 import { ImportDefinitionsService } from "./services/ImportDefinitionsService.js";
 import { RootPathContextService } from "./services/RootPathContextService.js";
 import { shouldCompleteMultiline } from "./shouldCompleteMultiline.js";
+import { ConfigHandler } from "../config/ConfigHandler.js";
+import { walkDirAsync } from "../indexing/walkDir.js";
 
 export function languageForFilepath(
   filepath: string,
 ): AutocompleteLanguageInfo {
   return LANGUAGES[filepath.split(".").slice(-1)[0]] || Typescript;
 }
-
 export async function constructAutocompletePrompt(
   filepath: string,
   cursorLine: number,
@@ -44,7 +45,74 @@ export async function constructAutocompletePrompt(
   extraSnippets: AutocompleteSnippet[],
   importDefinitionsService: ImportDefinitionsService,
   rootPathContextService: RootPathContextService,
-  // logMessage: (message: string) => void,
+  configHandler: ConfigHandler,
+): Promise<{
+  prefix: string;
+  suffix: string;
+  useFim: boolean;
+  completeMultiline: boolean;
+  snippets: AutocompleteSnippet[];
+}>{
+  // Construct basic prefix
+  const maxPrefixTokens = options.maxPromptTokens * options.prefixPercentage;
+  const prefix = pruneLinesFromTop(fullPrefix, maxPrefixTokens, modelName);
+  
+  // Construct suffix
+  const maxSuffixTokens = Math.min(
+    options.maxPromptTokens - countTokens(prefix, modelName),
+    options.maxSuffixPercentage * options.maxPromptTokens,
+  );
+  const suffix = pruneLinesFromBottom(fullSuffix, maxSuffixTokens, modelName);
+
+  // Calculate AST Path
+  let treePath: AstPath | undefined;
+  try {
+    const ast = await getAst(filepath, fullPrefix + fullSuffix);
+    if (ast) {
+      treePath = await getTreePathAtCursor(ast, fullPrefix.length);
+    }
+  } catch (e) {
+    console.error("Failed to parse AST", e);
+  }
+
+  // Find external snippets
+  let snippets: AutocompleteSnippet[] = [];
+  const workspaceDirs = await configHandler.ide.getWorkspaceDirs();
+  for (const directory of workspaceDirs) {
+    const workspaceFiles = [];
+    for await (const p of walkDirAsync(directory, configHandler.ide)) {
+      workspaceFiles.push(p);
+    }
+  }
+
+  return {
+    prefix,
+    suffix,
+    useFim: true,
+    completeMultiline: await shouldCompleteMultiline(
+      treePath,
+      fullPrefix,
+      fullSuffix,
+      language,
+    ),
+    snippets,
+  };
+}
+export async function constructAutocompletePrompt_origin(
+  filepath: string,
+  cursorLine: number,
+  fullPrefix: string,
+  fullSuffix: string,
+  clipboardText: string,
+  language: AutocompleteLanguageInfo,
+  options: TabAutocompleteOptions,
+  recentlyEditedRanges: RecentlyEditedRange[],
+  recentlyEditedFiles: RangeInFileWithContents[],
+  modelName: string,
+  extraSnippets: AutocompleteSnippet[],
+  importDefinitionsService: ImportDefinitionsService,
+  rootPathContextService: RootPathContextService,
+  configHandler: ConfigHandler,
 ): Promise<{
   prefix: string;
   suffix: string;
@@ -62,13 +130,13 @@ export async function constructAutocompletePrompt(
     options.maxSuffixPercentage * options.maxPromptTokens,
   );
   const suffix = pruneLinesFromBottom(fullSuffix, maxSuffixTokens, modelName);
-  // logMessage(
-  //   "core/autocomplete/constructPrompt.ts\n" +
-  //   "constructAutocompletePrompt - maxPrefixTokens: " + maxPrefixTokens + "\n" +
-  //   "constructAutocompletePrompt - prefix: " + prefix + "\n" +
-  //   "constructAutocompletePrompt - maxSuffixTokens: " + maxSuffixTokens + "\n" +
-  //   "constructAutocompletePrompt - suffix: " + suffix + "\n"
-  // );
+  configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - maxPrefixTokens: " + maxPrefixTokens + "\n" +
+    "constructAutocompletePrompt - prefix: " + prefix + "\n" +
+    "constructAutocompletePrompt - maxSuffixTokens: " + maxSuffixTokens + "\n" +
+    "constructAutocompletePrompt - suffix: " + suffix + "\n"
+  );
   // Calculate AST Path
   let treePath: AstPath | undefined;
   try {
@@ -91,11 +159,11 @@ export async function constructAutocompletePrompt(
       fullSuffix.slice(
         options.slidingWindowSize * (1 - options.slidingWindowPrefixPercentage),
       );
-    // logMessage(
-    //   "core/autocomplete/constructPrompt.ts\n" +
-    //   "constructAutocompletePrompt - extraSnippets: " + JSON.stringify({...extraSnippets}, null, 2) + "\n" +
-    //   "constructAutocompletePrompt - windowAroundCursor: " + windowAroundCursor + "\n"
-    // );
+    configHandler.logMessage(
+      "core/autocomplete/constructPrompt.ts\n" +
+      "constructAutocompletePrompt - extraSnippets: " + JSON.stringify({...extraSnippets}, null, 2) + "\n" +
+      "constructAutocompletePrompt - windowAroundCursor: " + windowAroundCursor + "\n"
+    );
     // This was much too slow, and not super useful
     // const slidingWindowMatches = await slidingWindowMatcher(
     //   recentlyEditedFiles,
@@ -114,6 +182,12 @@ export async function constructAutocompletePrompt(
 
     if (options.useRecentlyEdited) {
       const currentLinePrefix = prefix.trim().split("\n").slice(-1)[0];
+      configHandler.logMessage(
+        "core/autocomplete/constructPrompt.ts\n" +
+        "constructAutocompletePrompt - currentLinePrefix: " + currentLinePrefix + "\n" +
+        "constructAutocompletePrompt - currentLinePrefix?.length: " + currentLinePrefix?.length + "\n" +
+        "constructAutocompletePrompt - options.recentLinePrefixMatchMinLength: " + options.recentLinePrefixMatchMinLength + "\n"
+      );
       if (currentLinePrefix?.length > options.recentLinePrefixMatchMinLength) {
         const matchingRange = findMatchingRange(
           recentlyEditedRanges,
@@ -126,11 +200,11 @@ export async function constructAutocompletePrompt(
             score: 0.8,
           });
         }
-        // logMessage(
-        //   "core/autocomplete/constructPrompt.ts\n" +
-        //   "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" +
-        //   "constructAutocompletePrompt - matchingRange: " + JSON.stringify({...matchingRange}, null, 2) + "\n"
-        // );
+        configHandler.logMessage(
+          "core/autocomplete/constructPrompt.ts\n" +
+          "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" +
+          "constructAutocompletePrompt - matchingRange: " + JSON.stringify({...matchingRange}, null, 2) + "\n"
+        );
       }
     }
 
@@ -149,16 +223,22 @@ export async function constructAutocompletePrompt(
         ).filter((symbol) => !language.topLevelKeywords.includes(symbol));
         for (const symbol of symbols) {
           const rifs = imports[symbol];
+          configHandler.logMessage(
+            "core/autocomplete/constructPrompt.ts\n" +
+            "constructAutocompletePrompt - rifs: " + JSON.stringify({...rifs}, null, 2) + "\n" 
+          );
           if (Array.isArray(rifs)) {
             importSnippets.push(...rifs);
           }
         }
+        configHandler.logMessage(
+          "core/autocomplete/constructPrompt.ts\n" +
+          "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
+          "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" +
+          "constructAutocompletePrompt - symbols: " + JSON.stringify({...symbols}, null, 2) + "\n"
+        );
       }
-      // logMessage(
-      //   "core/autocomplete/constructPrompt.ts\n" +
-      //   "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
-      //   "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n"
-      // );
+      
       snippets.push(...importSnippets);
     }
 
@@ -167,10 +247,10 @@ export async function constructAutocompletePrompt(
         filepath,
         treePath,
       );
-      // logMessage(
-      //   "core/autocomplete/constructPrompt.ts\n" +
-      //   "constructAutocompletePrompt - ctx: " + JSON.stringify({...ctx}, null, 2) + "\n"
-      // );
+      configHandler.logMessage(
+        "core/autocomplete/constructPrompt.ts\n" +
+        "constructAutocompletePrompt - ctx: " + JSON.stringify({...ctx}, null, 2) + "\n"
+      );
       snippets.push(...ctx);
     }
 
@@ -185,10 +265,10 @@ export async function constructAutocompletePrompt(
 
     // Rank / order the snippets
     const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
-    // logMessage(
-    //   "core/autocomplete/constructPrompt.ts\n" +
-    //   "constructAutocompletePrompt - scoredSnippets: " + JSON.stringify({...scoredSnippets}, null, 2) + "\n"
-    // );
+    configHandler.logMessage(
+      "core/autocomplete/constructPrompt.ts\n" +
+      "constructAutocompletePrompt - scoredSnippets: " + JSON.stringify({...scoredSnippets}, null, 2) + "\n"
+    );
     // Fill maxSnippetTokens with snippets
     const maxSnippetTokens =
       options.maxPromptTokens * options.maxSnippetPercentage;
@@ -222,10 +302,10 @@ export async function constructAutocompletePrompt(
       maxSnippetTokens,
       modelName,
     );
-    // logMessage(
-    //   "core/autocomplete/constructPrompt.ts\n" +
-    //   "constructAutocompletePrompt - finalSnippets: " + JSON.stringify({...finalSnippets}, null, 2) + "\n"
-    // );
+    configHandler.logMessage(
+      "core/autocomplete/constructPrompt.ts\n" +
+      "constructAutocompletePrompt - finalSnippets: " + JSON.stringify({...finalSnippets}, null, 2) + "\n"
+    );
     snippets = finalSnippets;
   }
 

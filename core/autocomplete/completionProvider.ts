@@ -297,7 +297,7 @@ export class CompletionProvider {
         token = controller.signal;
         this._abortControllers.set(input.completionId, controller);
       }
-
+      
       // Allow disabling autocomplete from config.json
       if (options.disable) {
         return undefined;
@@ -566,7 +566,7 @@ export class CompletionProvider {
         extrasSnippets,
         this.importDefinitionsService,
         this.rootPathContextService,
-        this.configHandler.logMessage,
+        this.configHandler
       );
     // If prefix is manually passed
     if (manuallyPassPrefix) {
