@@ -24,7 +24,35 @@ import { ImportDefinitionsService } from "./services/ImportDefinitionsService.js
 import { RootPathContextService } from "./services/RootPathContextService.js";
 import { shouldCompleteMultiline } from "./shouldCompleteMultiline.js";
 import { ConfigHandler } from "../config/ConfigHandler.js";
-import { walkDirAsync } from "../indexing/walkDir.js";
+import {
+  DEFAULT_IGNORE_DIRS,
+  DEFAULT_IGNORE_FILETYPES,
+  defaultIgnoreDir,
+  defaultIgnoreFile,
+  gitIgArrayFromFile,
+} from "../indexing/ignore.js";
+import { appendLog } from "../../appendLog";
+import * as path from "path";
+import { promises as fs } from 'fs';
+import { fastChunk } from './fastChunk';
+import { chunkDocument } from "../indexing/chunk/chunk.js";
+
+
+const MAX_FILE_SIZE = 100000; // 100KB（字节）
+const MAX_FILE_NUMBER = 30;
+// 忽略目录正则表达式：匹配所有以忽略目录开头的路径
+const DEFAULT_IGNORE_DIRS_REGEX = new RegExp(
+  DEFAULT_IGNORE_DIRS.map((dir) => 
+    `(^|/)${dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
+  ).join("|")
+);
+// 忽略文件类型正则表达式：匹配特定的文件名或扩展名
+const DEFAULT_IGNORE_FILETYPES_REGEX = new RegExp(
+  DEFAULT_IGNORE_FILETYPES.map((type) => 
+    type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*")
+  ).join("|")
+);  
+
 
 export function languageForFilepath(
   filepath: string,
@@ -32,9 +60,63 @@ export function languageForFilepath(
   return LANGUAGES[filepath.split(".").slice(-1)[0]] || Typescript;
 }
 
-import * as path from "path";
-import { promises as fs } from 'fs';
+async function findFilesUpwards(startPath: string, maxFiles: number = 100): Promise<string[]> {
+  const resultFiles: string[] = [];
+  const visitedDirs = new Set<string>();
 
+  /**
+   * 遍历指定目录及其所有子目录中的文件
+   */
+  async function traverseDirectory(directory: string) {
+    if (resultFiles.length >= maxFiles || visitedDirs.has(directory)) {
+      return;
+    }
+    visitedDirs.add(directory); 
+    try {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(directory, entry.name);
+        
+        if (entry.isFile()) {
+          // 检查是否是需要忽略的文件类型（匹配文件名或扩展名）
+          if (DEFAULT_IGNORE_FILETYPES_REGEX.test(path.basename(fullPath))) {
+            continue;
+          }
+          if (fullPath === startPath && !resultFiles.includes(fullPath)) {
+            resultFiles.push(fullPath);
+          } else if (fullPath !== startPath) {
+            resultFiles.push(fullPath);
+          }
+          
+          if (resultFiles.length >= maxFiles) {
+            return;
+          }
+        } else if (entry.isDirectory()) {
+          // 检查是否是需要忽略的目录（匹配完整路径）
+          if (DEFAULT_IGNORE_DIRS_REGEX.test(fullPath)) {
+            continue;
+          }
+          await traverseDirectory(fullPath);
+        }
+      }
+    } catch (err) {
+      console.error(`Error reading directory ${directory}:`, err);
+    }
+  }
+
+  let currentDir = path.dirname(startPath);
+  while (currentDir && resultFiles.length < maxFiles) {
+    await traverseDirectory(currentDir);
+
+    const parentDir = path.resolve(currentDir, "..");
+    if (parentDir === currentDir) {
+      break; 
+    }
+    currentDir = parentDir;
+  }
+  return resultFiles.slice(0, maxFiles);
+}
 /**
  * 递归获取指定目录及其子目录中的所有文件路径
  * @param directory - 目标目录的路径
@@ -64,15 +146,16 @@ async function readFileWithSizeCheck(filepath: string, maxSize: number): Promise
     const fileSizeInBytes = stats.size; // 获取文件大小（字节）
 
     if (fileSizeInBytes < 10 * maxSize) {
-      // 如果文件大于最大大小（1MB），只读取文件的前部分
-      const buffer = Buffer.alloc(maxSize); // 创建一个缓冲区来存放文件的前部分内容
-      const fd = await fs.open(filepath, 'r'); // 打开文件进行读取
-      await fd.read(buffer, 0, maxSize, 0); // 从文件开始读取前 maxSize 字节
-      await fd.close(); // 关闭文件描述符
-
-      return buffer.toString('utf-8'); // 返回读取的内容
+      if (fileSizeInBytes <= maxSize) {
+        return await fs.readFile(filepath, 'utf-8');
+      } else {
+        const buffer = Buffer.alloc(maxSize); // 创建一个缓冲区来存放文件的前部分内容
+        const fd = await fs.open(filepath, 'r'); // 打开文件进行读取
+        await fd.read(buffer, 0, maxSize, 0); // 从文件开始读取前 maxSize 字节
+        await fd.close(); // 关闭文件描述符
+        return buffer.toString('utf-8'); // 返回读取的内容
+      }
     } else {
-      // 如果文件较小，直接读取整个文件
       return "";
     }
   } catch (error) {
@@ -81,8 +164,62 @@ async function readFileWithSizeCheck(filepath: string, maxSize: number): Promise
   }
 }
 
+async function compareChunkTime (
+  filepath: string,
+  configHandler: ConfigHandler,
+){
+  // Find external snippets
+  let snippets: AutocompleteSnippet[] = [];
+  const FastChunkStartTime = Date.now();
+  let fileNumber = 0;
+  for await (const p of await findFilesUpwards(filepath, MAX_FILE_NUMBER)) {
+    fileNumber = fileNumber + 1;
+    const fileContent: string = await readFileWithSizeCheck(p, MAX_FILE_SIZE);
+    if (fileContent != ""){
+      for await (const chunk of fastChunk(p, fileContent)) {
+        if (chunk){
+          snippets.push(chunk);
+        }
+      }
+    }
+  }
+  const FastChunkTime = Date.now() - FastChunkStartTime;
+  await configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - fileNumber: " + fileNumber + "\n" +
+    "constructAutocompletePrompt - snippets.length: " + snippets.length + "\n" +
+    "constructAutocompletePrompt - FastChunkTime: " + FastChunkTime/1000 + "s\n"
+  );
 
-export async function constructAutocompletePrompt(
+  let chunkNumber = 0;
+  const chunkDocumentStartTime = Date.now();
+  for await (const p of await findFilesUpwards(filepath, MAX_FILE_NUMBER)) {
+    const fileContent: string = await readFileWithSizeCheck(p, MAX_FILE_SIZE);
+    if (fileContent != "" && fileContent != undefined){
+      const chunkParams = {
+        filepath: p,
+        contents: fileContent,
+        maxChunkSize: 512,
+        digest: "",
+      }
+      for await (const chunk of chunkDocument(chunkParams)) {
+        if (chunk){
+          chunkNumber = chunkNumber + 1;
+        }
+      }
+    }
+  }
+  const chunkDocumentTime = Date.now() - chunkDocumentStartTime;
+  await configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - fileNumber: " + fileNumber + "\n" +
+    "constructAutocompletePrompt - snippets.length: " + chunkNumber + "\n" +
+    "constructAutocompletePrompt - chunkDocumentTime: " + chunkDocumentTime/1000 + "s\n"
+  );
+}
+
+
+export async function constructAutocompletePrompt_v2(
   filepath: string,
   cursorLine: number,
   fullPrefix: string,
@@ -127,36 +264,33 @@ export async function constructAutocompletePrompt(
     console.error("Failed to parse AST", e);
   }
   
-  const MAX_FILE_SIZE = 100000; // 100KB（字节）
-  const ReadFileStartTime = Date.now();
+  // compareChunkTime (filepath, configHandler);
   // Find external snippets
   let snippets: AutocompleteSnippet[] = [];
-  const workspaceDirs = await configHandler.ide.getWorkspaceDirs();
-  for (const directory of workspaceDirs) {
-    for await (const p of await getFilesFromDirectory(directory)) {
-      const ReadStartTime = Date.now();
-      const fileContent: string = await readFileWithSizeCheck(p, MAX_FILE_SIZE);
-      if (fileContent != ""){
-        await snippets.push({
-          filepath: p,
-          range: {
-            start: { line: 0, character: 0 },
-            end: { line: 0, character: 0 } 
-          },
-          contents: fileContent
-        });
+
+  const FastChunkStartTime = Date.now();
+  for await (const p of await findFilesUpwards(filepath, MAX_FILE_NUMBER)) {
+    const fileContent: string = await readFileWithSizeCheck(p, MAX_FILE_SIZE);
+    if (fileContent != ""){
+      for await (const chunk of fastChunk(p, fileContent)) {
+        if (chunk){
+          snippets.push(chunk);
+          // appendLog(
+          //   "core/autocomplete/constructPrompt.ts\n" +
+          //   "constructAutocompletePrompt - p: " + p + "\n" +
+          //   "constructAutocompletePrompt - chunk: " + JSON.stringify({...chunk}, null, 2) + "\n" 
+          // );
+        }
       }
-      
-      const ReadTime = Date.now() - ReadStartTime;
     }
   }
-
-  const ReadFileTime = Date.now() - ReadFileStartTime;
+  const FastChunkTime = Date.now() - FastChunkStartTime;
   await configHandler.logMessage(
     "core/autocomplete/constructPrompt.ts\n" +
     "constructAutocompletePrompt - snippets.length: " + snippets.length + "\n" +
-    "constructAutocompletePrompt - ReadFileTime: " + ReadFileTime/1000 + "s\n" 
+    "constructAutocompletePrompt - FastChunkTime: " + FastChunkTime/1000 + "s\n"
   );
+  
   
   const windowAroundCursor =
     fullPrefix.slice(
@@ -165,7 +299,13 @@ export async function constructAutocompletePrompt(
     fullSuffix.slice(
       options.slidingWindowSize * (1 - options.slidingWindowPrefixPercentage),
     );
+  const RankStartTime = Date.now();
   const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
+  const RankTime = Date.now() - RankStartTime;
+  await configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - RankTime: " + RankTime/1000 + "s\n" 
+  );
   // Fill maxSnippetTokens with snippets
   const maxSnippetTokens =
   options.maxPromptTokens * options.maxSnippetPercentage;
@@ -184,6 +324,7 @@ export async function constructAutocompletePrompt(
       character: 0,
     },
   };
+
   let finalSnippets = removeRangeFromSnippets(
     scoredSnippets,
     filepath.split("://").slice(-1)[0],
@@ -194,7 +335,8 @@ export async function constructAutocompletePrompt(
   finalSnippets = finalSnippets.filter(
     (snippet) => snippet.score >= options.recentlyEditedSimilarityThreshold,
     );
-    finalSnippets = fillPromptWithSnippets(
+
+  finalSnippets = fillPromptWithSnippets(
     scoredSnippets,
     maxSnippetTokens,
     modelName,
@@ -205,6 +347,7 @@ export async function constructAutocompletePrompt(
   await configHandler.logMessage(
     "core/autocomplete/constructPrompt.ts\n" +
     "constructAutocompletePrompt - time: " + time/1000 + "s\n" +
+    "constructAutocompletePrompt - maxSnippetTokens: " + maxSnippetTokens + "\n" +
     "constructAutocompletePrompt - snippets: " + JSON.stringify(snippets,null,2) + "\n" +
     "constructAutocompletePrompt - options: " + JSON.stringify({...options},null,2) + "\n"
   );
@@ -224,7 +367,7 @@ export async function constructAutocompletePrompt(
 }
 
 
-export async function constructAutocompletePrompt_origin(
+export async function constructAutocompletePrompt(
   filepath: string,
   cursorLine: number,
   fullPrefix: string,
@@ -277,6 +420,7 @@ export async function constructAutocompletePrompt_origin(
   // Find external snippets
   let snippets: AutocompleteSnippet[] = [];
   if (options.useOtherFiles) {
+    // 1. extraSnippets
     snippets.push(...extraSnippets);
     const windowAroundCursor =
       fullPrefix.slice(
@@ -306,68 +450,100 @@ export async function constructAutocompletePrompt_origin(
     //   })),
     // );
 
-    if (options.useRecentlyEdited) {
-      const currentLinePrefix = prefix.trim().split("\n").slice(-1)[0];
-      configHandler.logMessage(
-        "core/autocomplete/constructPrompt.ts\n" +
-        "constructAutocompletePrompt - currentLinePrefix: " + currentLinePrefix + "\n" +
-        "constructAutocompletePrompt - currentLinePrefix?.length: " + currentLinePrefix?.length + "\n" +
-        "constructAutocompletePrompt - options.recentLinePrefixMatchMinLength: " + options.recentLinePrefixMatchMinLength + "\n"
-      );
-      if (currentLinePrefix?.length > options.recentLinePrefixMatchMinLength) {
-        const matchingRange = findMatchingRange(
-          recentlyEditedRanges,
-          currentLinePrefix,
-        );
-        if (matchingRange) {
-          snippets.push({
-            ...matchingRange,
-            contents: matchingRange.lines.join("\n"),
-            score: 0.8,
-          });
+    // 2. 目录树上文件片段
+    const FastChunkStartTime = Date.now();
+    for await (const p of await findFilesUpwards(filepath, MAX_FILE_NUMBER)) {
+      const fileContent: string = await readFileWithSizeCheck(p, MAX_FILE_SIZE);
+      if (fileContent != ""){
+        for await (const chunk of fastChunk(p, fileContent)) {
+          if (chunk){
+            snippets.push(chunk);
+            // appendLog(
+            //   "core/autocomplete/constructPrompt.ts\n" +
+            //   "constructAutocompletePrompt - p: " + p + "\n" +
+            //   "constructAutocompletePrompt - chunk: " + JSON.stringify({...chunk}, null, 2) + "\n" 
+            // );
+          }
         }
-        configHandler.logMessage(
-          "core/autocomplete/constructPrompt.ts\n" +
-          "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" +
-          "constructAutocompletePrompt - matchingRange: " + JSON.stringify({...matchingRange}, null, 2) + "\n"
-        );
       }
     }
+    const FastChunkTime = Date.now() - FastChunkStartTime;
+    await configHandler.logMessage(
+      "core/autocomplete/constructPrompt.ts\n" +
+      "constructAutocompletePrompt - snippets.length: " + snippets.length + "\n" +
+      "constructAutocompletePrompt - FastChunkTime: " + FastChunkTime/1000 + "s\n"
+    );
 
-    // Use imports
+    // 3. 最近编辑过的文件
+    if (options.useRecentlyEdited) {
+      for (const key in recentlyEditedRanges) {
+        const recentlyEditedRange =  recentlyEditedRanges[key];
+        snippets.push({
+          ...recentlyEditedRange,
+          contents: recentlyEditedRange.lines.join("\n"),
+          // score: 0.8,
+        });
+      }
+      configHandler.logMessage(
+        "core/autocomplete/constructPrompt.ts\n" +
+        "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" 
+      );
+      // 选择与前缀相同的最近删除过的代码
+      // const currentLinePrefix = prefix.trim().split("\n").slice(-1)[0];
+      // if (currentLinePrefix?.length > options.recentLinePrefixMatchMinLength) {
+      //   const matchingRange = findMatchingRange(
+      //     recentlyEditedRanges,
+      //     currentLinePrefix,
+      //   );
+      //   if (matchingRange) {
+      //     snippets.push({
+      //       ...matchingRange,
+      //       contents: matchingRange.lines.join("\n"),
+      //       score: 0.8,
+      //     });
+      //   }
+      // }
+    }
+
+    // 4. Use imports
     if (options.useImports) {
       const importSnippets = [];
       const fileInfo = importDefinitionsService.get(filepath);
       if (fileInfo) {
         const { imports } = fileInfo;
-        // Look for imports of any symbols around the current range
-        const textAroundCursor =
-          fullPrefix.split("\n").slice(-5).join("\n") +
-          fullSuffix.split("\n").slice(0, 3).join("\n");
-        const symbols = Array.from(
-          getSymbolsForSnippet(textAroundCursor),
-        ).filter((symbol) => !language.topLevelKeywords.includes(symbol));
-        for (const symbol of symbols) {
-          const rifs = imports[symbol];
-          configHandler.logMessage(
-            "core/autocomplete/constructPrompt.ts\n" +
-            "constructAutocompletePrompt - rifs: " + JSON.stringify({...rifs}, null, 2) + "\n" 
-          );
-          if (Array.isArray(rifs)) {
-            importSnippets.push(...rifs);
-          }
+        for (const imported of imports){
+          importSnippets.push(...imported);
         }
         configHandler.logMessage(
           "core/autocomplete/constructPrompt.ts\n" +
-          "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
-          "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" +
-          "constructAutocompletePrompt - symbols: " + JSON.stringify({...symbols}, null, 2) + "\n"
+          "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" 
         );
+
+        // // Look for imports of any symbols around the current range
+        // const textAroundCursor =
+        //   fullPrefix.split("\n").slice(-5).join("\n") +
+        //   fullSuffix.split("\n").slice(0, 3).join("\n");
+        // const symbols = Array.from(
+        //   getSymbolsForSnippet(textAroundCursor),
+        // ).filter((symbol) => !language.topLevelKeywords.includes(symbol));
+        // for (const symbol of symbols) {
+        //   const rifs = imports[symbol];
+        //   if (Array.isArray(rifs)) {
+        //     importSnippets.push(...rifs);
+        //   }
+        // }
+        // configHandler.logMessage(
+        //   "core/autocomplete/constructPrompt.ts\n" +
+        //   "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
+        //   "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" +
+        //   "constructAutocompletePrompt - symbols: " + JSON.stringify({...symbols}, null, 2) + "\n"
+        // );
       }
       
       snippets.push(...importSnippets);
     }
 
+    // 5. context 信息
     if (options.useRootPathContext && treePath) {
       const ctx = await rootPathContextService.getContextForPath(
         filepath,
@@ -430,7 +606,8 @@ export async function constructAutocompletePrompt_origin(
     );
     configHandler.logMessage(
       "core/autocomplete/constructPrompt.ts\n" +
-      "constructAutocompletePrompt - finalSnippets: " + JSON.stringify({...finalSnippets}, null, 2) + "\n"
+      "constructAutocompletePrompt - finalSnippets: " + JSON.stringify({...finalSnippets}, null, 2) + "\n" +
+      "constructAutocompletePrompt - options: " + JSON.stringify({...options}, null, 2) + "\n"
     );
     snippets = finalSnippets;
   }

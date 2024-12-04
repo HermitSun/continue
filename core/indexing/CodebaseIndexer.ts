@@ -209,11 +209,10 @@ export class CodebaseIndexer {
           yield* this.yieldUpdateAndPause();
         }
       }
-
       const branch = await this.ide.getBranch(directory);
       const repoName = await this.ide.getRepoName(directory);
       let nextLogThreshold = 0;
-
+      
       try {
         for await (const updateDesc of this.indexFiles(
           directory,
@@ -335,6 +334,7 @@ export class CodebaseIndexer {
       curPos < results.addTag.length ||
       curPos < results.removeTag.length
     ) {
+      
       yield {
         compute: results.compute.slice(curPos, curPos + this.filesPerBatch),
         del: results.del.slice(curPos, curPos + this.filesPerBatch),
@@ -405,7 +405,7 @@ export class CodebaseIndexer {
             (1 / indexesToBuild.length);
         }
       }
-
+      
       await markComplete(lastUpdated, IndexResultType.UpdateLastUpdated);
       completedIndexCount += 1;
     }

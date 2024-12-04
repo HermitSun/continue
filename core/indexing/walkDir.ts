@@ -114,7 +114,6 @@ class DFSWalker {
       };
     });
   }
-
   private async getIgnoreToApplyInDir(
     curDir: WalkContext,
     entriesInDir: WalkableEntry[],
@@ -123,6 +122,7 @@ class DFSWalker {
     if (ignoreFilesInDir.length === 0) {
       return curDir.ignoreContexts;
     }
+    
     const patterns = ignoreFilesInDir.map((c) => gitIgArrayFromFile(c)).flat();
     const newIgnoreContext = {
       ignore: ignore().add(patterns),
@@ -133,15 +133,16 @@ class DFSWalker {
       newIgnoreContext
     ];
   }
-
+  
   private async loadIgnoreFiles(entries: WalkableEntry[]): Promise<string[]> {
     const ignoreEntries = entries.filter((w) => this.isIgnoreFile(w.entry));
+    
     const promises = ignoreEntries.map(async (w) => {
       return await this.ide.readFile(w.absPath);
     });
     return Promise.all(promises);
   }
-
+  
   private isIgnoreFile(e: Entry): boolean {
     const p = e[0];
     return this.ignoreFileNames.has(p);

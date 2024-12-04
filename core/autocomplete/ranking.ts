@@ -50,7 +50,7 @@ export function rankSnippets(
     ...snippet,
   }));
   const uniqueSnippets = deduplicateSnippets(snippets);
-  return uniqueSnippets.sort((a, b) => a.score - b.score);
+  return uniqueSnippets.sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -134,9 +134,9 @@ export function fillPromptWithSnippets(
       tokensRemaining -= tokenCount;
       keptSnippets.push(snippet);
     } else {
+      break;
     }
   }
-
   return keptSnippets;
 }
 
@@ -224,7 +224,7 @@ export function removeRangeFromSnippets(
       finalSnippets.push(snippet);
       continue;
     }
-
+    
     const intersection = rangeIntersectionByLines(range, snippet.range);
     if (!intersection) {
       finalSnippets.push(snippet);
@@ -240,3 +240,4 @@ export function removeRangeFromSnippets(
 
   return finalSnippets;
 }
+
