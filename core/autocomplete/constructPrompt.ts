@@ -38,8 +38,8 @@ import { fastChunk } from './fastChunk';
 import { chunkDocument } from "../indexing/chunk/chunk.js";
 
 
-const MAX_FILE_SIZE = 100000; // 100KB（字节）
-const MAX_FILE_NUMBER = 30;
+const MAX_FILE_SIZE = 30000; // 100KB（字节）
+const MAX_FILE_NUMBER = 20;
 // 忽略目录正则表达式：匹配所有以忽略目录开头的路径
 const DEFAULT_IGNORE_DIRS_REGEX = new RegExp(
   DEFAULT_IGNORE_DIRS.map((dir) => 
@@ -264,7 +264,7 @@ export async function constructAutocompletePrompt_v2(
     console.error("Failed to parse AST", e);
   }
   
-  // compareChunkTime (filepath, configHandler);
+  compareChunkTime (filepath, configHandler);
   // Find external snippets
   let snippets: AutocompleteSnippet[] = [];
 
@@ -389,6 +389,7 @@ export async function constructAutocompletePrompt(
   completeMultiline: boolean;
   snippets: AutocompleteSnippet[];
 }> {
+  const startTime = Date.now();
   // Construct basic prefix
   const maxPrefixTokens = options.maxPromptTokens * options.prefixPercentage;
   const prefix = pruneLinesFromTop(fullPrefix, maxPrefixTokens, modelName);
@@ -476,33 +477,33 @@ export async function constructAutocompletePrompt(
 
     // 3. 最近编辑过的文件
     if (options.useRecentlyEdited) {
-      for (const key in recentlyEditedRanges) {
-        const recentlyEditedRange =  recentlyEditedRanges[key];
-        snippets.push({
-          ...recentlyEditedRange,
-          contents: recentlyEditedRange.lines.join("\n"),
-          // score: 0.8,
-        });
-      }
-      configHandler.logMessage(
-        "core/autocomplete/constructPrompt.ts\n" +
-        "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" 
-      );
-      // 选择与前缀相同的最近删除过的代码
-      // const currentLinePrefix = prefix.trim().split("\n").slice(-1)[0];
-      // if (currentLinePrefix?.length > options.recentLinePrefixMatchMinLength) {
-      //   const matchingRange = findMatchingRange(
-      //     recentlyEditedRanges,
-      //     currentLinePrefix,
-      //   );
-      //   if (matchingRange) {
-      //     snippets.push({
-      //       ...matchingRange,
-      //       contents: matchingRange.lines.join("\n"),
-      //       score: 0.8,
-      //     });
-      //   }
+      // for (const key in recentlyEditedRanges) {
+      //   const recentlyEditedRange =  recentlyEditedRanges[key];
+      //   snippets.push({
+      //     ...recentlyEditedRange,
+      //     contents: recentlyEditedRange.lines.join("\n"),
+      //     // score: 0.8,
+      //   });
       // }
+      // configHandler.logMessage(
+      //   "core/autocomplete/constructPrompt.ts\n" +
+      //   "constructAutocompletePrompt - recentlyEditedRanges: " + JSON.stringify({...recentlyEditedRanges}, null, 2) + "\n" 
+      // );
+      // 选择与前缀相同的最近删除过的代码
+      const currentLinePrefix = prefix.trim().split("\n").slice(-1)[0];
+      if (currentLinePrefix?.length > options.recentLinePrefixMatchMinLength) {
+        const matchingRange = findMatchingRange(
+          recentlyEditedRanges,
+          currentLinePrefix,
+        );
+        if (matchingRange) {
+          snippets.push({
+            ...matchingRange,
+            contents: matchingRange.lines.join("\n"),
+            score: 0.8,
+          });
+        }
+      }
     }
 
     // 4. Use imports
@@ -511,33 +512,33 @@ export async function constructAutocompletePrompt(
       const fileInfo = importDefinitionsService.get(filepath);
       if (fileInfo) {
         const { imports } = fileInfo;
-        for (const imported of imports){
-          importSnippets.push(...imported);
-        }
-        configHandler.logMessage(
-          "core/autocomplete/constructPrompt.ts\n" +
-          "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" 
-        );
-
-        // // Look for imports of any symbols around the current range
-        // const textAroundCursor =
-        //   fullPrefix.split("\n").slice(-5).join("\n") +
-        //   fullSuffix.split("\n").slice(0, 3).join("\n");
-        // const symbols = Array.from(
-        //   getSymbolsForSnippet(textAroundCursor),
-        // ).filter((symbol) => !language.topLevelKeywords.includes(symbol));
-        // for (const symbol of symbols) {
-        //   const rifs = imports[symbol];
-        //   if (Array.isArray(rifs)) {
-        //     importSnippets.push(...rifs);
-        //   }
+        // for (const imported of imports){
+        //   importSnippets.push(...imported);
         // }
         // configHandler.logMessage(
         //   "core/autocomplete/constructPrompt.ts\n" +
-        //   "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
-        //   "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" +
-        //   "constructAutocompletePrompt - symbols: " + JSON.stringify({...symbols}, null, 2) + "\n"
+        //   "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" 
         // );
+
+        // Look for imports of any symbols around the current range
+        const textAroundCursor =
+          fullPrefix.split("\n").slice(-5).join("\n") +
+          fullSuffix.split("\n").slice(0, 3).join("\n");
+        const symbols = Array.from(
+          getSymbolsForSnippet(textAroundCursor),
+        ).filter((symbol) => !language.topLevelKeywords.includes(symbol));
+        for (const symbol of symbols) {
+          const rifs = imports[symbol];
+          if (Array.isArray(rifs)) {
+            importSnippets.push(...rifs);
+          }
+        }
+        configHandler.logMessage(
+          "core/autocomplete/constructPrompt.ts\n" +
+          "constructAutocompletePrompt - fileInfo: " + JSON.stringify({...fileInfo}, null, 2) + "\n" +
+          "constructAutocompletePrompt - importSnippets: " + JSON.stringify({...importSnippets}, null, 2) + "\n" +
+          "constructAutocompletePrompt - symbols: " + JSON.stringify({...symbols}, null, 2) + "\n"
+        );
       }
       
       snippets.push(...importSnippets);
@@ -566,11 +567,15 @@ export async function constructAutocompletePrompt(
       );
 
     // Rank / order the snippets
+    const RankStartTime = Date.now();
     const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
-    configHandler.logMessage(
+    const RankTime = Date.now() - RankStartTime;
+    await configHandler.logMessage(
       "core/autocomplete/constructPrompt.ts\n" +
+      "constructAutocompletePrompt - RankTime: " + RankTime/1000 + "s\n" +
       "constructAutocompletePrompt - scoredSnippets: " + JSON.stringify({...scoredSnippets}, null, 2) + "\n"
     );
+    
     // Fill maxSnippetTokens with snippets
     const maxSnippetTokens =
       options.maxPromptTokens * options.maxSnippetPercentage;
@@ -604,14 +609,15 @@ export async function constructAutocompletePrompt(
       maxSnippetTokens,
       modelName,
     );
-    configHandler.logMessage(
-      "core/autocomplete/constructPrompt.ts\n" +
-      "constructAutocompletePrompt - finalSnippets: " + JSON.stringify({...finalSnippets}, null, 2) + "\n" +
-      "constructAutocompletePrompt - options: " + JSON.stringify({...options}, null, 2) + "\n"
-    );
     snippets = finalSnippets;
   }
-
+  const time = Date.now() - startTime;
+  await configHandler.logMessage(
+    "core/autocomplete/constructPrompt.ts\n" +
+    "constructAutocompletePrompt - time: " + time/1000 + "s\n" +
+    "constructAutocompletePrompt - snippets: " + JSON.stringify(snippets,null,2) + "\n" +
+    "constructAutocompletePrompt - options: " + JSON.stringify({...options},null,2) + "\n"
+  );
   return {
     prefix,
     suffix,

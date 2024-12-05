@@ -270,7 +270,7 @@ export class CodebaseIndexer {
       debugInfo: extractMinimalStackTraceInfo((err as any)?.stack),
     };
   }
-
+  
   private errorToProgressUpdate(err: Error): IndexingProgressUpdate {
     let errMsg: string = `${err}`;
     let shouldClearIndexes = false;
@@ -294,7 +294,7 @@ export class CodebaseIndexer {
       debugInfo: extractMinimalStackTraceInfo(err.stack),
     };
   }
-
+  
   private logProgress(
     beginTime: number,
     completedFileCount: number,

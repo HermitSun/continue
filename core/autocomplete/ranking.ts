@@ -224,10 +224,11 @@ export function removeRangeFromSnippets(
       finalSnippets.push(snippet);
       continue;
     }
-    
+
     const intersection = rangeIntersectionByLines(range, snippet.range);
     if (!intersection) {
       finalSnippets.push(snippet);
+      
     } else {
       finalSnippets.push(
         ...rangeDifferenceByLines(snippet.range, intersection).map((range) => ({
