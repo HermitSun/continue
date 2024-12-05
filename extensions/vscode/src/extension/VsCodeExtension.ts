@@ -35,6 +35,8 @@ import { VsCodeMessenger } from "./VsCodeMessenger";
 export class VsCodeExtension {
   // Currently some of these are public so they can be used in testing (test/test-suites)
 
+  private username: string;
+  private logRoot: string;
   private configHandler: ConfigHandler;
   private extensionContext: vscode.ExtensionContext;
   private ide: VsCodeIde;
@@ -49,6 +51,20 @@ export class VsCodeExtension {
   private workOsAuthProvider: WorkOsAuthProvider;
 
   constructor(context: vscode.ExtensionContext) {
+    // Register username
+    this.username = "unknown";
+    context.secrets.get("nova-user").then((username) => {
+      if (username) {
+        this.username = username;
+      }
+    });
+
+    // Set Log Root Dir
+    const targetLogRoot = "/scratch/AIInfra/continue";
+    this.logRoot = fs.existsSync(targetLogRoot)
+      ? targetLogRoot
+      : "/";
+
     // Register auth provider
     this.workOsAuthProvider = new WorkOsAuthProvider(context);
     this.workOsAuthProvider.refreshSessions();
@@ -120,6 +136,14 @@ export class VsCodeExtension {
         "==========================================================================",
       );
       outputChannel.append(log);
+      // write to local dir for debugging
+      const logPath = `${this.logRoot}/${this.username}.log`;
+      fs.appendFileSync(
+        logPath,
+        `==========================================================================
+==========================================================================
+${log}`,
+      );
     });
     this.configHandler = this.core.configHandler;
     resolveConfigHandler?.(this.configHandler);

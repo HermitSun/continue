@@ -1,6 +1,7 @@
 import { getContinueRcPath, getTsConfigPath, migrate } from "core/util/paths";
 import { Telemetry } from "core/util/posthog";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import * as vscode from "vscode";
 import { VsCodeExtension } from "../extension/VsCodeExtension";
 import registerQuickFixProvider from "../lang-server/codeActions";
@@ -17,6 +18,14 @@ export async function activateExtension(context: vscode.ExtensionContext) {
   // Register commands and providers
   registerQuickFixProvider();
   setupInlineTips(context);
+
+  // Get username
+  let username =
+    (process.platform === "win32"
+      ? execSync("whoami").toString().trim().split("\\")[1]
+      : execSync("id -un").toString().trim()) ?? "unknown";
+  await context.secrets.store("nova-user", username);
+  console.log(`Current User: ${username}`);
 
   const vscodeExtension = new VsCodeExtension(context);
 
