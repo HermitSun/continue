@@ -292,12 +292,14 @@ export class CodebaseIndexer {
       status: "failed",
       shouldClearIndexes,
       debugInfo: extractMinimalStackTraceInfo(err.stack),
+      
     };
   }
   
   private logProgress(
     beginTime: number,
     completedFileCount: number,
+    
     progress: number,
   ) {
     const timeTaken = Date.now() - beginTime;
@@ -308,7 +310,7 @@ export class CodebaseIndexer {
     //   `Indexing: ${progressPercentage}% complete, elapsed time: ${seconds}s, ${filesPerSec} file/sec`,
     // );
   }
-
+  
   private async *yieldUpdateAndPause(): AsyncGenerator<IndexingProgressUpdate> {
     yield {
       progress: 0,
@@ -334,7 +336,7 @@ export class CodebaseIndexer {
       curPos < results.addTag.length ||
       curPos < results.removeTag.length
     ) {
-      
+
       yield {
         compute: results.compute.slice(curPos, curPos + this.filesPerBatch),
         del: results.del.slice(curPos, curPos + this.filesPerBatch),

@@ -96,8 +96,7 @@ export class GeneratorReuseManager {
   async *getGenerator(
     prefix: string,
     newGenerator: () => AsyncGenerator<string>,
-    multiline: boolean,
-    configHandler:any
+    multiline: boolean
   ): AsyncGenerator<string> {
     // Check if current can be reused
     if (
@@ -125,7 +124,6 @@ export class GeneratorReuseManager {
       while (chunk.length && alreadyTyped.length) {
         if (chunk[0] === alreadyTyped[0]) {
           alreadyTyped = alreadyTyped.slice(1);
-          
           chunk = chunk.slice(1);
         } else {
           break;
@@ -148,7 +146,7 @@ export class GeneratorReuseManager {
         const firstLineOfCompletion = completion
           .split("\n")
           .find((line) => line.trim().length > 0);
-        if (firstLineOfCompletion!=undefined && lineAbove!=undefined && firstLineOfCompletion.trim() === lineAbove.trim()){
+        if (firstLineOfCompletion != undefined && lineAbove != undefined && firstLineOfCompletion.trim() === lineAbove.trim()){
           completion = "";
           yield chunk.slice(newLineIndex);
           continue;

@@ -99,6 +99,7 @@ async function* processNode(
                 end: { line: node.endPosition.row, character: 0 } 
             },
             contents: await collapseLargeBlock(node, code, filepath)
+            
         };
         for (const chunk of collectedChunks){
             yield chunk;

@@ -7,7 +7,7 @@ export type AutocompleteSnippet = RangeInFileWithContents & {
   score?: number;
 };
 
-const rx = /[\s.,\/#!$%\^&\*;:{}=\-_`~()\[\]]/g;
+const rx = /[\s.,\/#!$%\^&\*;:{}=\-_~()\[\]]/g;
 export function getSymbolsForSnippet(snippet: string): Set<string> {
   const symbols = snippet
     .split(rx)
@@ -16,21 +16,35 @@ export function getSymbolsForSnippet(snippet: string): Set<string> {
   return new Set(symbols);
 }
 
+const symbolRegex = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
+export function getSymbolsForSnippet_fast(snippet: string): Set<string> {
+  const symbols = new Set<string>();
+  const matches  = snippet.matchAll(symbolRegex);
+  for (const match of matches) {
+    symbols.add(match[0]);
+  }
+  return symbols;
+}
+
 /**
  * Calculate similarity as number of shared symbols divided by total number of unique symbols between both.
  */
 export function jaccardSimilarity(a: string, b: string, configHandler: ConfigHandler): number {
-  const startTime = Date.now();
-  const aSet = getSymbolsForSnippet(a);
-  const bSet = getSymbolsForSnippet(b);
-  const Time = Date.now() - startTime;
-  configHandler.logMessage(
-    "core/autocomplete/ranking.ts\n" +
-    "constructAutocompletePrompt - Time: " + Time/1000 + "s\n" +
-    "constructAutocompletePrompt - aSet.size: " + aSet.size + "\n" +
-    "constructAutocompletePrompt - bSet.size: " + bSet.size + "\n"
-  );
+  // const startGetSymbolTime = Date.now();
+  const aSet = getSymbolsForSnippet_fast(a);
+  const bSet = getSymbolsForSnippet_fast(b);
+  // const GetSymbolTime = Date.now() - startGetSymbolTime;
+
+  // const startSetTime = Date.now();
   const union = new Set([...aSet, ...bSet]).size;
+  // const SetTime = Date.now() - startSetTime;
+  // configHandler.logMessage(
+  //   "core/autocomplete/ranking.ts\n" +
+  //   "jaccardSimilarity - SetTime: " + SetTime/1000 + "s\n" +
+  //   "jaccardSimilarity - GetSymbolTime: " + GetSymbolTime/1000 + "s\n" +
+  //   "jaccardSimilarity - aSet.size: " + aSet.size + "\n" +
+  //   "jaccardSimilarity - bSet.size: " + bSet.size + "\n" 
+  // );
 
   // Avoid division by zero
   if (union === 0) {
@@ -42,7 +56,6 @@ export function jaccardSimilarity(a: string, b: string, configHandler: ConfigHan
       intersection++;
     }
   }
-
   return intersection / union;
 }
 
@@ -54,17 +67,17 @@ export function rankSnippets(
   windowAroundCursor: string,
   configHandler: ConfigHandler,
 ): Required<AutocompleteSnippet>[] {
-  const startTime = Date.now();
+  // const startTime = Date.now();
   const snippets: Required<AutocompleteSnippet>[] = ranges.map((snippet) => ({
     score:
       snippet.score ?? jaccardSimilarity(snippet.contents, windowAroundCursor, configHandler),
     ...snippet,
   }));
-  const Time = Date.now() - startTime;
-  configHandler.logMessage(
-    "core/autocomplete/ranking.ts\n" +
-    "constructAutocompletePrompt - jaccardSimilarityTime: " + Time/1000 + "s\n" 
-  );
+  // const Time = Date.now() - startTime;
+  // configHandler.logMessage(
+  //   "core/autocomplete/ranking.ts\n" +
+  //   "constructAutocompletePrompt - jaccardSimilarityTime: " + Time/1000 + "s\n" 
+  // );
   const uniqueSnippets = deduplicateSnippets(snippets);
   return uniqueSnippets.sort((a, b) => b.score - a.score);
 }
@@ -150,7 +163,24 @@ export function fillPromptWithSnippets(
       tokensRemaining -= tokenCount;
       keptSnippets.push(snippet);
     } else {
+      // 用换行符切分 snippet，填充 keptSnippets， 直到剩余 tokens 不足
+      const lines = snippet.contents.split('\n');
+      let partialContents = '';
+      for (let j = 0; j < lines.length; j++) {
+        const line = lines[j];
+        const lineTokenCount = countTokens(line, modelName);
+        if (tokensRemaining - lineTokenCount >= 0) {
+          tokensRemaining -= lineTokenCount;
+          partialContents += (partialContents ? '\n' : '') + line;
+        } else {
+          break;
+        }
+      }
+      if (partialContents) {
+        keptSnippets.push({ ...snippet, contents: partialContents });
+      }
       break;
+
     }
   }
   return keptSnippets;
