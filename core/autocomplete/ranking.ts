@@ -1,6 +1,7 @@
 import { RangeInFileWithContents } from "../commands/util.js";
 import { Range } from "../index.js";
 import { countTokens } from "../llm/countTokens.js";
+import { ConfigHandler } from "../config/ConfigHandler.js";
 
 export type AutocompleteSnippet = RangeInFileWithContents & {
   score?: number;
@@ -18,9 +19,17 @@ export function getSymbolsForSnippet(snippet: string): Set<string> {
 /**
  * Calculate similarity as number of shared symbols divided by total number of unique symbols between both.
  */
-export function jaccardSimilarity(a: string, b: string): number {
+export function jaccardSimilarity(a: string, b: string, configHandler: ConfigHandler): number {
+  const startTime = Date.now();
   const aSet = getSymbolsForSnippet(a);
   const bSet = getSymbolsForSnippet(b);
+  const Time = Date.now() - startTime;
+  configHandler.logMessage(
+    "core/autocomplete/ranking.ts\n" +
+    "constructAutocompletePrompt - Time: " + Time/1000 + "s\n" +
+    "constructAutocompletePrompt - aSet.size: " + aSet.size + "\n" +
+    "constructAutocompletePrompt - bSet.size: " + bSet.size + "\n"
+  );
   const union = new Set([...aSet, ...bSet]).size;
 
   // Avoid division by zero
@@ -43,12 +52,19 @@ export function jaccardSimilarity(a: string, b: string): number {
 export function rankSnippets(
   ranges: AutocompleteSnippet[],
   windowAroundCursor: string,
+  configHandler: ConfigHandler,
 ): Required<AutocompleteSnippet>[] {
+  const startTime = Date.now();
   const snippets: Required<AutocompleteSnippet>[] = ranges.map((snippet) => ({
     score:
-      snippet.score ?? jaccardSimilarity(snippet.contents, windowAroundCursor),
+      snippet.score ?? jaccardSimilarity(snippet.contents, windowAroundCursor, configHandler),
     ...snippet,
   }));
+  const Time = Date.now() - startTime;
+  configHandler.logMessage(
+    "core/autocomplete/ranking.ts\n" +
+    "constructAutocompletePrompt - jaccardSimilarityTime: " + Time/1000 + "s\n" 
+  );
   const uniqueSnippets = deduplicateSnippets(snippets);
   return uniqueSnippets.sort((a, b) => b.score - a.score);
 }

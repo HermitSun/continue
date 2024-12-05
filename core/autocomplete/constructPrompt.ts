@@ -300,7 +300,7 @@ export async function constructAutocompletePrompt_v2(
       options.slidingWindowSize * (1 - options.slidingWindowPrefixPercentage),
     );
   const RankStartTime = Date.now();
-  const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
+  const scoredSnippets = rankSnippets(snippets, windowAroundCursor, configHandler);
   const RankTime = Date.now() - RankStartTime;
   await configHandler.logMessage(
     "core/autocomplete/constructPrompt.ts\n" +
@@ -568,7 +568,7 @@ export async function constructAutocompletePrompt(
 
     // Rank / order the snippets
     const RankStartTime = Date.now();
-    const scoredSnippets = rankSnippets(snippets, windowAroundCursor);
+    const scoredSnippets = rankSnippets(snippets, windowAroundCursor, configHandler);
     const RankTime = Date.now() - RankStartTime;
     await configHandler.logMessage(
       "core/autocomplete/constructPrompt.ts\n" +
