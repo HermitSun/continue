@@ -44,6 +44,7 @@ export async function constructAutocompletePrompt(
   extraSnippets: AutocompleteSnippet[],
   importDefinitionsService: ImportDefinitionsService,
   rootPathContextService: RootPathContextService,
+  
 ): Promise<{
   prefix: string;
   suffix: string;

@@ -294,7 +294,7 @@ export class CodebaseIndexer {
       debugInfo: extractMinimalStackTraceInfo(err.stack),
     };
   }
-
+  
   private logProgress(
     beginTime: number,
     completedFileCount: number,
