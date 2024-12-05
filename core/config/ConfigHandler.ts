@@ -163,7 +163,7 @@ export class ConfigHandler {
     this.ideSettingsPromise = Promise.resolve(ideSettings);
     this.reloadConfig();
   }
-
+  //   
   updateControlPlaneSessionInfo(
     sessionInfo: ControlPlaneSessionInfo | undefined,
   ) {
