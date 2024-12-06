@@ -57,7 +57,7 @@ export class CodebaseIndexer {
   async clearIndexes() {
     const sqliteFilepath = getIndexSqlitePath();
     const lanceDbFolder = getLanceDbPath();
-
+    
     try {
       await fs.unlink(sqliteFilepath);
     } catch (error) {
@@ -185,7 +185,7 @@ export class CodebaseIndexer {
       status: "loading",
     };
     const beginTime = Date.now();
-
+    
     for (const directory of workspaceDirs) {
       const dirBasename = await this.basename(directory);
       yield {
@@ -193,6 +193,7 @@ export class CodebaseIndexer {
         desc: `Discovering files in ${dirBasename}...`,
         status: "indexing",
       };
+
       const workspaceFiles = [];
       for await (const p of walkDirAsync(directory, this.ide)) {
         workspaceFiles.push(p);
@@ -208,11 +209,10 @@ export class CodebaseIndexer {
           yield* this.yieldUpdateAndPause();
         }
       }
-
       const branch = await this.ide.getBranch(directory);
       const repoName = await this.ide.getRepoName(directory);
       let nextLogThreshold = 0;
-
+      
       try {
         for await (const updateDesc of this.indexFiles(
           directory,
@@ -270,7 +270,7 @@ export class CodebaseIndexer {
       debugInfo: extractMinimalStackTraceInfo((err as any)?.stack),
     };
   }
-
+  
   private errorToProgressUpdate(err: Error): IndexingProgressUpdate {
     let errMsg: string = `${err}`;
     let shouldClearIndexes = false;
@@ -292,12 +292,14 @@ export class CodebaseIndexer {
       status: "failed",
       shouldClearIndexes,
       debugInfo: extractMinimalStackTraceInfo(err.stack),
+      
     };
   }
-
+  
   private logProgress(
     beginTime: number,
     completedFileCount: number,
+    
     progress: number,
   ) {
     const timeTaken = Date.now() - beginTime;
@@ -308,7 +310,7 @@ export class CodebaseIndexer {
     //   `Indexing: ${progressPercentage}% complete, elapsed time: ${seconds}s, ${filesPerSec} file/sec`,
     // );
   }
-
+  
   private async *yieldUpdateAndPause(): AsyncGenerator<IndexingProgressUpdate> {
     yield {
       progress: 0,
@@ -334,6 +336,7 @@ export class CodebaseIndexer {
       curPos < results.addTag.length ||
       curPos < results.removeTag.length
     ) {
+
       yield {
         compute: results.compute.slice(curPos, curPos + this.filesPerBatch),
         del: results.del.slice(curPos, curPos + this.filesPerBatch),
@@ -378,7 +381,7 @@ export class CodebaseIndexer {
         results.addTag.length +
         results.removeTag.length;
       let completedOps = 0;
-
+      
       // Don't update if nothing to update. Some of the indices might do unnecessary setup work
       if (totalOps > 0) {
         for (const subResult of this.batchRefreshIndexResults(results)) {
@@ -404,7 +407,7 @@ export class CodebaseIndexer {
             (1 / indexesToBuild.length);
         }
       }
-
+      
       await markComplete(lastUpdated, IndexResultType.UpdateLastUpdated);
       completedIndexCount += 1;
     }

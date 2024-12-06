@@ -196,7 +196,7 @@ export class ContinueCompletionProvider
         // diff = diff.split("\n").splice(-150).join("\n");
         // manuallyPassPrefix = `${diff}\n\nCommit message: `;
       }
-
+      
       const input: AutocompleteInput = {
         completionId: uuidv4(),
         filepath: document.uri.fsPath,

@@ -29,7 +29,7 @@ export class AutocompleteLruCache {
         timestamp INTEGER NOT NULL
       )
     `);
-
+    
     return new AutocompleteLruCache(db);
   }
 

@@ -297,7 +297,7 @@ export class CompletionProvider {
         token = controller.signal;
         this._abortControllers.set(input.completionId, controller);
       }
-
+      
       // Allow disabling autocomplete from config.json
       if (options.disable) {
         return undefined;
@@ -566,6 +566,7 @@ export class CompletionProvider {
         extrasSnippets,
         this.importDefinitionsService,
         this.rootPathContextService,
+        this.configHandler
       );
     // If prefix is manually passed
     if (manuallyPassPrefix) {
@@ -661,36 +662,36 @@ export class CompletionProvider {
       }
       completion = processedCompletion
     } else {
-      if (typeof template === "string") {
-        let modified_prefix = prefix;
-        // // 调用 RAG 
-        // const RAGstartTime = Date.now();
-        // const CodebaseContext = await this.resolveCodebase(prompt,selectedModelTitle);
-        // modified_prefix = CodebaseContext + "```" + filepath + "```" + prefix;
-        // const RAGtime = Date.now() - RAGstartTime;
-        // await this.configHandler.logMessage(
-        //   "Document Path: /ai4math/users/xmlu/continue_env/continue/core/autocomplete/completionProvider.ts\n"+
-        //   "获取codebasecontext耗时："+RAGtime/1000+"s\n"
-        // );
-        const compiledTemplate = Handlebars.compile(template);
-        prompt = compiledTemplate({
-          modified_prefix,
-          suffix,
-          filename,
-          reponame,
-          language: lang.name,
-        });
-      }else{
-        // Let the template function format snippets
-        prompt = template(
-          prefix,
-          suffix,
-          filepath,
-          reponame,
-          lang.name,
-          snippets,
-        );
-      }
+      // if (typeof template === "string") {
+      //   let modified_prefix = prefix;
+      //   // 调用 RAG 
+      //   const RAGstartTime = Date.now();
+      //   const CodebaseContext = await this.resolveCodebase(prompt,selectedModelTitle);
+      //   modified_prefix = CodebaseContext + "```" + filepath + "```" + prefix;
+      //   const RAGtime = Date.now() - RAGstartTime;
+      //   await this.configHandler.logMessage(
+      //     "Document Path: /ai4math/users/xmlu/continue_env/continue/core/autocomplete/completionProvider.ts\n"+
+      //     "获取codebasecontext耗时："+RAGtime/1000+"s\n"
+      //   );
+      //   const compiledTemplate = Handlebars.compile(template);
+      //   prompt = compiledTemplate({
+      //     modified_prefix,
+      //     suffix,
+      //     filename,
+      //     reponame,
+      //     language: lang.name,
+      //   });
+      // }else{
+      //   // Let the template function format snippets
+      //   prompt = template(
+      //     prefix,
+      //     suffix,
+      //     filepath,
+      //     reponame,
+      //     lang.name,
+      //     snippets,
+      //   );
+      // }
       
 
       const stop = [
@@ -729,16 +730,8 @@ export class CompletionProvider {
                 raw: true,
                 stop,
               }),
-        multiline,
-        this.configHandler
+        multiline
       );
-
-
-      // const streamCompleteGenerator = llm.streamComplete(prompt, {
-      //   ...completionOptions,
-      //   raw: true,
-      //   stop,
-      // });
 
       // Full stop means to stop the LLM's generation, instead of just truncating the displayed completion
       const fullStop = () =>
