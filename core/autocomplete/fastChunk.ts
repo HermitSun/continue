@@ -2,7 +2,6 @@ import { SyntaxNode } from "web-tree-sitter";
 import { type AutocompleteSnippet } from "./ranking.js";
 import { countTokensAsync } from "../llm/countTokens.js";
 import { getParserForFile } from "../util/treeSitter.js";
-import { appendLog } from "../../appendLog";
 
 const MAX_BLOCK_SIZE = 2000;
 const MIN_BLOCK_SIZE = 300;
@@ -13,6 +12,7 @@ function serializeSyntaxTree(node: SyntaxNode): object {
             type: node.type, // 节点类型，例如 "class_declaration"
             startIndex: node.startIndex, // 起始字符位置
             endIndex: node.endIndex, // 结束字符位置
+
             children: "...", // 递归序列化子节点
         };
     }
@@ -35,17 +35,7 @@ export async function* fastChunk(
         return undefined;
     }
     const tree = parser.parse(contents);
-    // appendLog(
-    //     "core/autocomplete/fastChunk.ts\n" +
-    //     "fastChunk - tree.rootNode: " + JSON.stringify({...serializeSyntaxTree(tree.rootNode)}, null, 2) + "\n" +
-    //     "fastChunk - contents: " + contents + "\n"
-    // )
     for await (const chunk of processNode(filepath, tree.rootNode, contents)) {
-        // appendLog(
-        //     "core/autocomplete/fastChunk.ts\n" +
-        //     "fastChunk - filepath: " + filepath + "\n" +
-        //     "fastChunk - chunk: " + JSON.stringify({...chunk}, null, 2) + "\n"
-        // )
         yield chunk;
     }
 }

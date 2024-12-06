@@ -6,7 +6,6 @@ import { getQueryForFile, TSQueryType } from "../../util/treeSitter";
 import { AstPath } from "../ast";
 import { AutocompleteSnippet } from "../ranking";
 import { ImportDefinitionsService } from "./ImportDefinitionsService";
-import { appendLog } from "../../../appendLog";
 
 export class RootPathContextService {
   private cache = new LRUCache<string, AutocompleteSnippet[]>({
@@ -116,16 +115,6 @@ export class RootPathContextService {
       const newSnippets =
         foundInCache ?? (await this.getSnippetsForNode(filepath, astNode));
       snippets.push(...newSnippets);
-      appendLog(
-        "core/autocomplete/services/RootPathContextService.ts\n" +
-        "getContextForPath - key: " + key + "\n" +
-        "getContextForPath - parentKey: " + parentKey + "\n" +
-        "getContextForPath - astNode: " + astNode + "\n" + 
-        "getContextForPath - foundInCache: " + foundInCache + "\n" + 
-        "getContextForPath - filepath: " + filepath + "\n" + 
-        "getContextForPath - newSnippets: " + JSON.stringify({...newSnippets},null,2) + "\n" + 
-        "\n"
-      );
       if (!foundInCache) {
         this.cache.set(key, newSnippets);
       }

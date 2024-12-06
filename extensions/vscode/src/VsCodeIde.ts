@@ -362,7 +362,7 @@ class VsCodeIde implements IDE {
 
     return allDirs;
   }
-
+  
   async getWorkspaceDirs(): Promise<string[]> {
     return this.ideUtils.getWorkspaceDirectories();
   }

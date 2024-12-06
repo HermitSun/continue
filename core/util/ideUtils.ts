@@ -8,7 +8,6 @@ export async function resolveRelativePathInWorkspace(
   if (path.startsWith(pathSep)) {
     return path;
   }
-
   const workspaces = await ide.getWorkspaceDirs();
   for (const workspace of workspaces) {
     const fullPath = `${workspace}${pathSep}${path}`;

@@ -32,7 +32,6 @@ import {
   defaultIgnoreFile,
   gitIgArrayFromFile,
 } from "../indexing/ignore.js";
-import { appendLog } from "../../appendLog";
 import * as path from "path";
 import { promises as fs } from 'fs';
 import { fastChunk } from './fastChunk';
@@ -276,11 +275,6 @@ export async function constructAutocompletePrompt_v2(
       for await (const chunk of fastChunk(p, fileContent)) {
         if (chunk){
           snippets.push(chunk);
-          // appendLog(
-          //   "core/autocomplete/constructPrompt.ts\n" +
-          //   "constructAutocompletePrompt - p: " + p + "\n" +
-          //   "constructAutocompletePrompt - chunk: " + JSON.stringify({...chunk}, null, 2) + "\n" 
-          // );
         }
       }
     }
