@@ -61,9 +61,7 @@ export class VsCodeExtension {
 
     // Set Log Root Dir
     const targetLogRoot = "/scratch/AIInfra/continue";
-    this.logRoot = fs.existsSync(targetLogRoot)
-      ? targetLogRoot
-      : "/";
+    this.logRoot = fs.existsSync(targetLogRoot) ? targetLogRoot : "/";
 
     // Register auth provider
     this.workOsAuthProvider = new WorkOsAuthProvider(context);
@@ -129,12 +127,14 @@ export class VsCodeExtension {
     );
 
     this.core = new Core(inProcessMessenger, this.ide, async (log: string) => {
+      const logTime = new Date().toISOString();
       outputChannel.appendLine(
         "==========================================================================",
       );
       outputChannel.appendLine(
         "==========================================================================",
       );
+      outputChannel.appendLine(`log time: ${logTime}`);
       outputChannel.append(log);
       // write to local dir for debugging
       const logPath = `${this.logRoot}/${this.username}.log`;
@@ -142,6 +142,7 @@ export class VsCodeExtension {
         logPath,
         `==========================================================================
 ==========================================================================
+log time: ${logTime}
 ${log}`,
       );
     });
